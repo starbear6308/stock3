@@ -4,8 +4,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // ============================================================
 // 設定 — 填入你的 GAS Web App URL
 // ============================================================
-const API_URL = "https://script.google.com/macros/s/AKfycbwkasrHZ5hKYEHQtayNFeTMfCzGCTPkCPU7RcJyBNxOrP65ntuki3g3HIDbVNCJIEeXZQ/exec";
-
+const API_URL = import.meta.env.VITE_GAS_API_URL;
 // ============================================================
 // 工具函式
 // ============================================================
