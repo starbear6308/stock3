@@ -1,41 +1,8 @@
-const CACHE_NAME = "stock-dashboard-v5";
-const STATIC_ASSETS = ["/", "/index.html"];
-
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
+const CACHE = "portfolio-v6";
+const ASSETS = ["/", "/index.html"];
+self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS))); self.skipWaiting(); });
+self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
-
-  // API requests: network-first, fall back to cache
-  if (url.hostname.includes("script.google.com")) {
-    e.respondWith(
-      fetch(e.request)
-        .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  // Static assets: cache-first
-  e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
-  );
+  if (e.request.method !== "GET") return;
+  e.respondWith(fetch(e.request).then((r) => { if (r.ok) { const c = r.clone(); caches.open(CACHE).then((cache) => cache.put(e.request, c)); } return r; }).catch(() => caches.match(e.request)));
 });

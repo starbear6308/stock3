@@ -4,7 +4,8 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // ============================================================
 // 設定 — 填入你的 GAS Web App URL
 // ============================================================
-const API_URL = import.meta.env.VITE_GAS_API_URL;
+const API_URL = "";
+
 // ============================================================
 // 工具函式
 // ============================================================
@@ -22,8 +23,10 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 // ============================================================
 // API
 // ============================================================
-async function apiGet(action = "getData") {
-  const r = await fetch(`${API_URL}?action=${action}`);
+async function apiGet(action = "getData", params = {}) {
+  let url = `${API_URL}?action=${action}`;
+  Object.keys(params).forEach(k => { url += `&${k}=${encodeURIComponent(params[k])}`; });
+  const r = await fetch(url);
   return r.json();
 }
 async function apiPost(action, data = {}) {
@@ -277,6 +280,8 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [invRows, setInvRows] = useState([]);
   const [apiResults, setApiResults] = useState([]);
+  const [hlData, setHlData] = useState([]);
+  const [hlYears, setHlYears] = useState(5);
 
   const [addF, setAddF] = useState({ market: "TW", broker: "凱基", symbol: "", date: today(), price: "", shares: "", fee: "0" });
   const [sellF, setSellF] = useState({ market: "TW", symbol: "", sellDate: today(), sellPrice: "", sellShares: "", fee: "0", tax: "0" });
@@ -318,6 +323,11 @@ export default function App() {
   const openInv = async () => { setModal("inv"); setInvRows([]); try { const r = await apiGet("getInventory"); setInvRows(r.success ? r.data : []); } catch (e) { notify(e.message); } };
   const delRow = async (n) => { if (!confirm(`確定刪除第 ${n} 列？`)) return; notify("刪除中..."); try { const r = await apiPost("deleteRow", { row: n }); notify(r.success ? r.message : r.error); openInv(); } catch (e) { notify(e.message); } };
   const openApi = async () => { setModal("api"); setApiResults([]); try { const r = await apiGet("testApis"); setApiResults(r.success ? r.data : []); } catch (e) { notify(e.message); } };
+  const openHL = async (yrs) => {
+    const y = yrs || hlYears;
+    setModal("hl"); setHlData([]); setHlYears(y);
+    try { const r = await apiGet("getAllHL", { years: y }); setHlData(r.success ? r.data : []); } catch (e) { notify("錯誤：" + e.message); }
+  };
 
   const divCashPrev = Math.round((parseFloat(divF.cashDiv) || 0) * (parseInt(divF.heldShares) || 0));
   const divStockPrev = divF.market === "TW" ? Math.floor((parseFloat(divF.stockDiv) || 0) / 10 * (parseInt(divF.heldShares) || 0)) : Math.floor((parseFloat(divF.stockDiv) || 0) * (parseInt(divF.heldShares) || 0));
@@ -365,6 +375,7 @@ export default function App() {
           <Btn color="purple" onClick={() => { setDivF((f) => ({ ...f, year: String(new Date().getFullYear()), exDate: today() })); setModal("div"); }} disabled={busy}>💰 記錄股利</Btn>
           <Btn color="amber" onClick={() => doAction("fetchDividends", "抓取除權息中（約 60 秒）...")} disabled={busy}>🔍 抓取除權息</Btn>
           <Btn color="ghost" onClick={openInv} disabled={busy}>📝 持股明細</Btn>
+          <Btn color="ghost" onClick={() => openHL(5)} disabled={busy}>📊 歷史高低</Btn>
           <Btn color="ghost" onClick={openApi} disabled={busy}>🧪 測試API</Btn>
           <Btn color="ghost" onClick={() => doAction("setupTrigger", "設定中...")} disabled={busy}>⏰ 每日自動</Btn>
         </div>
@@ -489,6 +500,76 @@ export default function App() {
               </div>
             </div>
           ))}</div>
+        }
+      </Modal>
+
+      {/* Historical High/Low Modal */}
+      <Modal open={modal === "hl"} close={() => setModal(null)} title="📊 歷史最高 / 最低" wide>
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-slate-500">查詢區間：</span>
+          {[3, 5, 10].map((y) => (
+            <button key={y} onClick={() => openHL(y)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition ${hlYears === y ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              近 {y} 年
+            </button>
+          ))}
+        </div>
+        {!hlData.length ? <Spinner text={`查詢近 ${hlYears} 年歷史資料中...`} /> :
+          <div className="space-y-3">
+            {hlData.map((r, i) => (
+              <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                {r.error ? (
+                  <div className="text-rose-500 text-sm">❌ {r.symbol}：{r.error}</div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-bold text-blue-700">{r.symbol}</span>
+                      {r.name && <span className="text-xs text-slate-400">{r.name}</span>}
+                      <MarketBadge symbol={r.symbol} />
+                      {r.currentPrice > 0 && <span className="ml-auto text-sm font-semibold">目前 {fmtD(r.currentPrice)}</span>}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <div className="text-slate-400 mb-1 font-medium">近 {r.period?.years || hlYears} 年最高</div>
+                        <div className="text-lg font-bold text-rose-600">{fmtD(r.period?.high)}</div>
+                        <div className="text-slate-400">{r.period?.highDate}</div>
+                        {r.period?.fromHigh !== undefined && <div className="text-xs mt-1 text-rose-500">距高點 {r.period.fromHigh > 0 ? "+" : ""}{r.period.fromHigh}%</div>}
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-slate-100">
+                        <div className="text-slate-400 mb-1 font-medium">近 {r.period?.years || hlYears} 年最低</div>
+                        <div className="text-lg font-bold text-emerald-600">{fmtD(r.period?.low)}</div>
+                        <div className="text-slate-400">{r.period?.lowDate}</div>
+                        {r.period?.fromLow !== undefined && <div className="text-xs mt-1 text-emerald-500">距低點 +{r.period.fromLow}%</div>}
+                      </div>
+                    </div>
+                    <div className="flex gap-4 mt-2 text-[11px] text-slate-400">
+                      <span>歷史最高：{fmtD(r.allTime?.high)}（{r.allTime?.highDate}）</span>
+                      <span>歷史最低：{fmtD(r.allTime?.low)}（{r.allTime?.lowDate}）</span>
+                    </div>
+                    {r.yearlyHL && r.yearlyHL.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="text-[11px] text-blue-500 cursor-pointer hover:text-blue-700">📅 每年明細</summary>
+                        <div className="mt-1 overflow-x-auto">
+                          <table className="w-full text-[11px]">
+                            <thead><tr className="text-slate-400"><th className="text-left py-1">年度</th><th className="text-right py-1">最高</th><th className="text-center py-1">日期</th><th className="text-right py-1">最低</th><th className="text-center py-1">日期</th></tr></thead>
+                            <tbody>{r.yearlyHL.map((y, j) => (
+                              <tr key={j} className="border-t border-slate-100">
+                                <td className="py-1 font-medium">{y.year}</td>
+                                <td className="py-1 text-right text-rose-600 font-medium">{fmtD(y.high)}</td>
+                                <td className="py-1 text-center text-slate-400">{y.highDate}</td>
+                                <td className="py-1 text-right text-emerald-600 font-medium">{fmtD(y.low)}</td>
+                                <td className="py-1 text-center text-slate-400">{y.lowDate}</td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      </details>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         }
       </Modal>
 
